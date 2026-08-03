@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Google Play Games Services keys. -->
+<!-- Replace the placeholder with the real numeric App ID from -->
+<!-- Play Console > Play Games Services > Setup and management > Configuration. -->
+<!-- The value must be the numeric project id only (e.g. 123456789012). -->
+<resources>
+    <string name="game_services_project_id" translatable="false">000000000000</string>
+</resources>

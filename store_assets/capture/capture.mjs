@@ -37,12 +37,6 @@ const TARGETS = [
     settleMs: 9000,
     afterMs: 6500,
   },
-  {
-    id: 'penguin_brothers',
-    url: '/?game=penguin_brothers',
-    settleMs: 12000,
-    landscape: true,
-  },
 ];
 
 const wanted = process.argv.slice(2);

@@ -146,7 +146,6 @@ SCREENS = [
     ("card_match", ["Match. Collect.", "Win!"], "Fast card fun vs AI or a friend", "#4ADE80", "#14532D"),
     ("tic_tac_toe", ["X vs O \u2014", "Game On!"], "Beat the AI on Easy, Medium or Hard", "#FB923C", "#7C2D12"),
     ("stack", ["How High", "Can You Stack?"], "One-tap arcade action", "#A78BFA", "#3B0764"),
-    ("penguin_brothers", ["Bomb, Jump,", "Escape!"], "Arcade adventure with cute penguins", "#38BDF8", "#075985"),
 ]
 
 
@@ -164,7 +163,7 @@ def compose_screenshot(
 
     shot = Image.open(RAW / f"{sid}.png")
     phone_top = max(y + 50, 480)
-    if shot.width > shot.height:  # landscape capture (Penguin Brothers)
+    if shot.width > shot.height:  # landscape capture
         shot_w = 1000
         device_h = int(shot.height * shot_w / shot.width) + 32
         draw_phone(canvas, shot, W // 2,
@@ -197,8 +196,7 @@ def compose_feature_graphic() -> None:
     d.text((334, 206), "Many fun games in one free app", font=sub_font(40),
            fill=(255, 255, 255, 230))
 
-    tiles = ["ludo", "checkers", "card_match", "tic_tac_toe", "stack",
-             "penguin_brothers"]
+    tiles = ["ludo", "checkers", "card_match", "tic_tac_toe", "stack"]
     size, gap = 118, 24
     total = len(tiles) * size + (len(tiles) - 1) * gap
     x = (w - total) // 2
