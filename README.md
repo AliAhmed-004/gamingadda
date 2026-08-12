@@ -1,6 +1,6 @@
 # Gaming Adda
 
-Casual board games and arcade classics in one Flutter app — Checkers, Ludo, Sudoku, Connect 4, Card Match, Stack, Tic-Tac-Toe, and Penguin Brothers Arcade.
+Casual board games and arcade classics in one Flutter app — Checkers, Ludo, Sudoku, Connect 4, Card Match, Stack, and Tic-Tac-Toe.
 
 ## Play on the web
 

@@ -13,7 +13,6 @@ import 'games/connect_four/connect_four_setup_screen.dart';
 import 'games/ludo/ludo_config.dart';
 import 'games/ludo/ludo_play_screen.dart';
 import 'games/ludo/ludo_setup_screen.dart';
-import 'games/penbros_arcade/penbros_arcade_play_screen.dart';
 import 'games/stack/stack_play_screen.dart';
 import 'games/sudoku/sudoku_config.dart';
 import 'games/sudoku/sudoku_play_screen.dart';
@@ -30,7 +29,6 @@ void openPlay(BuildContext context, Game game) {
     'checkers' => const CheckersSetupScreen(),
     'connect_four' => const ConnectFourSetupScreen(),
     'ludo' => const LudoSetupScreen(),
-    'penbros_arcade' => const PenbrosArcadePlayScreen(),
     'stack' => const StackPlayScreen(),
     'sudoku' => const SudokuSetupScreen(),
     'casino' => const CasinoSetupScreen(),
