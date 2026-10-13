@@ -48,10 +48,13 @@ class _BlockRaceSetupScreenState extends State<BlockRaceSetupScreen> {
             style: GoogleFonts.fredoka(fontWeight: FontWeight.w700),
           ),
           content: Text(
-            'Race your pawn along the 3D path to the opposite goal. '
-            'Roll the dice and move — land on your opponent to send them back to start. '
-            'After moving, you may place a barricade on any open path tile to block the way. '
-            'First player to reach their goal wins!',
+            'Barricade Clash is played on a 9×9 grid. You are Red at the '
+            'bottom; reach the top row to win. Each turn, either move one '
+            'step (tap a glowing cell or use the arrow pad) or place a wall '
+            '(tap "Place wall", then tap a green bar between cells). Walls '
+            'block movement for both players but can never fully seal anyone '
+            'off. Jump straight over your rival when they stand next to you. '
+            'Each player gets 10 walls — first to the far side wins!',
             style: GoogleFonts.nunito(height: 1.4),
           ),
           actions: [
@@ -68,12 +71,13 @@ class _BlockRaceSetupScreenState extends State<BlockRaceSetupScreen> {
 
   String get _modeHint {
     if (_mode == BlockRacePlayMode.localTwoPlayer) {
-      return 'Pass-and-play. Blue goes first.';
+      return 'Pass-and-play. Red goes first.';
     }
     return switch (_difficulty) {
-      BlockRaceAiDifficulty.easy => 'You are Blue. AI makes occasional mistakes.',
-      BlockRaceAiDifficulty.medium => 'You are Blue. AI blocks key tiles.',
-      BlockRaceAiDifficulty.hard => 'You are Blue. AI plays aggressively.',
+      BlockRaceAiDifficulty.easy =>
+        'You are Red. AI makes occasional mistakes.',
+      BlockRaceAiDifficulty.medium => 'You are Red. AI blocks key paths.',
+      BlockRaceAiDifficulty.hard => 'You are Red. AI plays aggressively.',
     };
   }
 
@@ -104,7 +108,7 @@ class _BlockRaceSetupScreenState extends State<BlockRaceSetupScreen> {
                     vertical: CartoonTheme.spaceLg,
                   ),
                   child: CartoonPanel(
-                    title: 'BLOCK RACE',
+                    title: 'BARRICADE CLASH',
                     maxWidth: maxPanel,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -205,8 +209,7 @@ class _BlockRaceSetupScreenState extends State<BlockRaceSetupScreen> {
                             icon: Icons.sentiment_satisfied_alt_outlined,
                             label: 'Easy',
                             height: pillHeight,
-                            selected:
-                                _difficulty == BlockRaceAiDifficulty.easy,
+                            selected: _difficulty == BlockRaceAiDifficulty.easy,
                             onTap: () => setState(
                               () => _difficulty = BlockRaceAiDifficulty.easy,
                             ),
@@ -219,8 +222,7 @@ class _BlockRaceSetupScreenState extends State<BlockRaceSetupScreen> {
                             selected:
                                 _difficulty == BlockRaceAiDifficulty.medium,
                             onTap: () => setState(
-                              () =>
-                                  _difficulty = BlockRaceAiDifficulty.medium,
+                              () => _difficulty = BlockRaceAiDifficulty.medium,
                             ),
                           ),
                           const SizedBox(height: CartoonTheme.spaceMd),
@@ -228,8 +230,7 @@ class _BlockRaceSetupScreenState extends State<BlockRaceSetupScreen> {
                             icon: Icons.sentiment_very_dissatisfied_outlined,
                             label: 'Hard',
                             height: pillHeight,
-                            selected:
-                                _difficulty == BlockRaceAiDifficulty.hard,
+                            selected: _difficulty == BlockRaceAiDifficulty.hard,
                             onTap: () => setState(
                               () => _difficulty = BlockRaceAiDifficulty.hard,
                             ),

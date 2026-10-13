@@ -96,6 +96,7 @@ flutter:
     - assets/checkers/goti/goti_light.png
     - assets/checkers/goti/goti_light_king.png
     - assets/checkers/goti/goti_target.png
+    - assets/block_race/
     - assets/tic_tac_toe/
 
   # An image asset can refer to one or more resolution-specific "variants", see

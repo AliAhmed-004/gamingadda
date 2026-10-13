@@ -1,321 +1,436 @@
-import 'dart:math' as math;
+import 'dart:collection';
+
+/// Quoridor-style Barricade Clash core rules.
+///
+/// Board is 9×9 cells. Walls sit on the 8×8 fence grid and each wall spans
+/// two adjacent fences. Players alternate: move one step (or jump) **or**
+/// place one wall. First to the opposite side wins. Wall placement must leave
+/// both players a path to their goal.
 
 enum BlockRacePlayer { blue, red }
 
-enum BlockRacePhase {
-  ready,
-  rolling,
-  moving,
-  placingBarricade,
-  animating,
-  gameOver,
-}
+enum BlockRacePhase { ready, choosing, animating, gameOver }
 
-enum BlockRaceCellKind { empty, path, blueGoal, redGoal }
+enum BlockRaceActionMode { move, wall }
 
-class BlockRaceCell {
-  const BlockRaceCell({
-    required this.row,
-    required this.col,
-    required this.kind,
-  });
+enum WallOrientation { horizontal, vertical }
+
+class BoardPos {
+  const BoardPos(this.row, this.col);
 
   final int row;
   final int col;
-  final BlockRaceCellKind kind;
 
-  bool get isPath =>
-      kind == BlockRaceCellKind.path ||
-      kind == BlockRaceCellKind.blueGoal ||
-      kind == BlockRaceCellKind.redGoal;
+  bool get inBounds =>
+      row >= 0 &&
+      row < BlockRaceGame.boardSize &&
+      col >= 0 &&
+      col < BlockRaceGame.boardSize;
 
-  bool get isGoal =>
-      kind == BlockRaceCellKind.blueGoal || kind == BlockRaceCellKind.redGoal;
+  BoardPos operator +(BoardPos o) => BoardPos(row + o.row, col + o.col);
 
   @override
   bool operator ==(Object other) =>
-      other is BlockRaceCell && other.row == row && other.col == col;
+      other is BoardPos && other.row == row && other.col == col;
 
   @override
   int get hashCode => Object.hash(row, col);
+
+  @override
+  String toString() => '($row,$col)';
+}
+
+/// A wall occupies one slot on the 8×8 fence lattice and blocks two edges.
+class Wall {
+  const Wall({required this.row, required this.col, required this.orientation});
+
+  /// Top-left fence intersection of the wall (0..7).
+  final int row;
+  final int col;
+  final WallOrientation orientation;
+
+  bool get inBounds =>
+      row >= 0 &&
+      row < BlockRaceGame.fenceSize &&
+      col >= 0 &&
+      col < BlockRaceGame.fenceSize;
+
+  @override
+  bool operator ==(Object other) =>
+      other is Wall &&
+      other.row == row &&
+      other.col == col &&
+      other.orientation == orientation;
+
+  @override
+  int get hashCode => Object.hash(row, col, orientation);
 }
 
 class BlockRaceMoveResult {
   const BlockRaceMoveResult({
-    required this.fromIndex,
-    required this.toIndex,
-    required this.capturedOpponent,
+    required this.from,
+    required this.to,
     required this.won,
   });
 
-  final int fromIndex;
-  final int toIndex;
-  final bool capturedOpponent;
+  final BoardPos from;
+  final BoardPos to;
   final bool won;
 }
 
 class BlockRaceGame {
-  BlockRaceGame({math.Random? random}) : _random = random ?? math.Random();
+  BlockRaceGame();
 
-  static const boardRows = 7;
-  static const boardCols = 7;
-  static const maxBarricades = 3;
-  static const goalIndex = 6;
+  static const boardSize = 9;
+  static const fenceSize = 8;
+  static const wallsPerPlayer = 10;
 
-  static const List<BlockRaceCell> bluePath = [
-    BlockRaceCell(row: 3, col: 0, kind: BlockRaceCellKind.path),
-    BlockRaceCell(row: 3, col: 1, kind: BlockRaceCellKind.path),
-    BlockRaceCell(row: 3, col: 2, kind: BlockRaceCellKind.path),
-    BlockRaceCell(row: 3, col: 3, kind: BlockRaceCellKind.path),
-    BlockRaceCell(row: 2, col: 3, kind: BlockRaceCellKind.path),
-    BlockRaceCell(row: 1, col: 3, kind: BlockRaceCellKind.path),
-    BlockRaceCell(row: 0, col: 3, kind: BlockRaceCellKind.blueGoal),
-  ];
+  /// Blue starts at the top edge (row 0), races to bottom (row 8).
+  static const blueStart = BoardPos(0, 4);
 
-  static const List<BlockRaceCell> redPath = [
-    BlockRaceCell(row: 3, col: 6, kind: BlockRaceCellKind.path),
-    BlockRaceCell(row: 3, col: 5, kind: BlockRaceCellKind.path),
-    BlockRaceCell(row: 3, col: 4, kind: BlockRaceCellKind.path),
-    BlockRaceCell(row: 3, col: 3, kind: BlockRaceCellKind.path),
-    BlockRaceCell(row: 4, col: 3, kind: BlockRaceCellKind.path),
-    BlockRaceCell(row: 5, col: 3, kind: BlockRaceCellKind.path),
-    BlockRaceCell(row: 6, col: 3, kind: BlockRaceCellKind.redGoal),
-  ];
-
-  final math.Random _random;
+  /// Red starts at the bottom edge (row 8), races to top (row 0).
+  static const redStart = BoardPos(8, 4);
 
   BlockRacePhase phase = BlockRacePhase.ready;
-  BlockRacePlayer currentPlayer = BlockRacePlayer.blue;
+  BlockRacePlayer currentPlayer = BlockRacePlayer.red;
   BlockRacePlayer? winner;
+  BlockRaceActionMode actionMode = BlockRaceActionMode.move;
+  WallOrientation wallOrientation = WallOrientation.horizontal;
 
-  int bluePathIndex = 0;
-  int redPathIndex = 0;
-  int diceValue = 1;
+  BoardPos bluePos = blueStart;
+  BoardPos redPos = redStart;
 
-  final Set<BlockRaceCell> barricades = {};
-  int blueBarricadesLeft = maxBarricades;
-  int redBarricadesLeft = maxBarricades;
+  final List<Wall> walls = [];
+  int blueWallsLeft = wallsPerPlayer;
+  int redWallsLeft = wallsPerPlayer;
+  int moveCount = 0;
 
   String get statusMessage {
-    if (winner != null) {
-      return '${_playerLabel(winner!)} wins!';
-    }
+    if (winner != null) return '${_label(winner!)} wins!';
     return switch (phase) {
-      BlockRacePhase.ready => 'Tap Roll to begin',
-      BlockRacePhase.rolling => '${_playerLabel(currentPlayer)}\'s turn — roll the dice',
-      BlockRacePhase.moving =>
-        'Rolled $diceValue — ${_canCurrentPlayerMove() ? "moving pawn" : "no legal move"}',
-      BlockRacePhase.placingBarricade =>
-        'Place a barricade or skip',
-      BlockRacePhase.animating => '...',
-      BlockRacePhase.gameOver => '${_playerLabel(winner!)} wins!',
+      BlockRacePhase.ready => 'Get ready…',
+      BlockRacePhase.choosing => '${_label(currentPlayer)}\'s turn',
+      BlockRacePhase.animating => '…',
+      BlockRacePhase.gameOver => '${_label(winner!)} wins!',
     };
   }
 
-  static String _playerLabel(BlockRacePlayer player) =>
-      player == BlockRacePlayer.blue ? 'Blue' : 'Red';
+  static String _label(BlockRacePlayer p) =>
+      p == BlockRacePlayer.blue ? 'Blue' : 'Red';
 
-  static List<BlockRaceCell> pathFor(BlockRacePlayer player) =>
-      player == BlockRacePlayer.blue ? bluePath : redPath;
+  BoardPos positionOf(BlockRacePlayer player) =>
+      player == BlockRacePlayer.blue ? bluePos : redPos;
 
-  static BlockRaceCell cellAt(int row, int col) {
-    for (final cell in bluePath) {
-      if (cell.row == row && cell.col == col) return cell;
-    }
-    for (final cell in redPath) {
-      if (cell.row == row && cell.col == col) return cell;
-    }
-    return BlockRaceCell(row: row, col: col, kind: BlockRaceCellKind.empty);
-  }
+  int wallsLeftFor(BlockRacePlayer player) =>
+      player == BlockRacePlayer.blue ? blueWallsLeft : redWallsLeft;
 
-  BlockRaceCell pawnCell(BlockRacePlayer player) {
-    final index = player == BlockRacePlayer.blue ? bluePathIndex : redPathIndex;
-    return pathFor(player)[index];
-  }
+  int goalRowFor(BlockRacePlayer player) =>
+      player == BlockRacePlayer.blue ? boardSize - 1 : 0;
 
-  int pathIndexFor(BlockRacePlayer player) =>
-      player == BlockRacePlayer.blue ? bluePathIndex : redPathIndex;
-
-  int barricadesLeftFor(BlockRacePlayer player) =>
-      player == BlockRacePlayer.blue ? blueBarricadesLeft : redBarricadesLeft;
-
-  bool isBarricadeAt(int row, int col) =>
-      barricades.contains(BlockRaceCell(row: row, col: col, kind: BlockRaceCellKind.path));
-
-  bool _isBlocked(BlockRaceCell cell) {
-    if (cell.isGoal) return false;
-    return barricades.contains(cell) ||
-        barricades.contains(
-          BlockRaceCell(row: cell.row, col: cell.col, kind: BlockRaceCellKind.path),
-        );
-  }
-
-  bool _cellHasOpponent(BlockRaceCell cell, BlockRacePlayer mover) {
-    final opponent =
-        mover == BlockRacePlayer.blue ? BlockRacePlayer.red : BlockRacePlayer.blue;
-    final opponentCell = pawnCell(opponent);
-    return opponentCell.row == cell.row && opponentCell.col == cell.col;
-  }
-
-  int? _maxReachableIndex(BlockRacePlayer player, int steps) {
-    final path = pathFor(player);
-    final start = pathIndexFor(player);
-    if (start >= goalIndex) return null;
-
-    var reachable = start;
-    for (var step = 1; step <= steps; step++) {
-      final next = start + step;
-      if (next > goalIndex) break;
-
-      final cell = path[next];
-      if (next < goalIndex && _isBlocked(cell)) break;
-
-      reachable = next;
-      if (next == goalIndex) break;
-    }
-
-    return reachable > start ? reachable : null;
-  }
-
-  bool _canCurrentPlayerMove() =>
-      _maxReachableIndex(currentPlayer, diceValue) != null;
-
-  bool canPlaceBarricade() =>
-      barricadesLeftFor(currentPlayer) > 0 && validBarricadeCells().isNotEmpty;
-
-  List<BlockRaceCell> validBarricadeCells() {
-    final cells = <BlockRaceCell>[];
-    for (final path in [bluePath, redPath]) {
-      for (final cell in path) {
-        if (cell.isGoal) continue;
-        if (barricades.contains(cell)) continue;
-        if (pawnCell(BlockRacePlayer.blue) == cell) continue;
-        if (pawnCell(BlockRacePlayer.red) == cell) continue;
-        cells.add(cell);
-      }
-    }
-    return cells;
-  }
-
-  int rollDice() {
-    diceValue = _random.nextInt(6) + 1;
-    return diceValue;
-  }
-
-  void beginTurn() {
-    winner = null;
-    phase = BlockRacePhase.rolling;
-  }
+  bool hasReachedGoal(BlockRacePlayer player) =>
+      positionOf(player).row == goalRowFor(player);
 
   void startGame() {
-    bluePathIndex = 0;
-    redPathIndex = 0;
-    barricades.clear();
-    blueBarricadesLeft = maxBarricades;
-    redBarricadesLeft = maxBarricades;
-    currentPlayer = BlockRacePlayer.blue;
+    bluePos = blueStart;
+    redPos = redStart;
+    walls.clear();
+    blueWallsLeft = wallsPerPlayer;
+    redWallsLeft = wallsPerPlayer;
+    currentPlayer = BlockRacePlayer.red;
     winner = null;
-    diceValue = 1;
-    phase = BlockRacePhase.rolling;
+    moveCount = 0;
+    actionMode = BlockRaceActionMode.move;
+    wallOrientation = WallOrientation.horizontal;
+    phase = BlockRacePhase.choosing;
   }
 
-  BlockRaceMoveResult? applyMove() {
-    if (phase != BlockRacePhase.moving && phase != BlockRacePhase.rolling) {
-      return null;
+  void setActionMode(BlockRaceActionMode mode) {
+    if (phase != BlockRacePhase.choosing) return;
+    if (mode == BlockRaceActionMode.wall && wallsLeftFor(currentPlayer) <= 0) {
+      return;
     }
+    actionMode = mode;
+  }
 
-    final target = _maxReachableIndex(currentPlayer, diceValue);
-    if (target == null) {
-      _endTurnWithoutBarricade();
-      return null;
+  void toggleWallOrientation() {
+    wallOrientation = wallOrientation == WallOrientation.horizontal
+        ? WallOrientation.vertical
+        : WallOrientation.horizontal;
+  }
+
+  void setWallOrientation(WallOrientation orientation) {
+    wallOrientation = orientation;
+  }
+
+  /// Whether the edge between [a] and [b] (orthogonal neighbors) is blocked.
+  bool isEdgeBlocked(BoardPos a, BoardPos b) {
+    final dr = b.row - a.row;
+    final dc = b.col - a.col;
+    if ((dr.abs() + dc.abs()) != 1) return true;
+
+    if (dr == 1) {
+      // Moving down: horizontal fence between a.row and a.row+1 at col a.col
+      return _hasHorizontalFence(a.row, a.col);
     }
+    if (dr == -1) {
+      return _hasHorizontalFence(b.row, a.col);
+    }
+    if (dc == 1) {
+      return _hasVerticalFence(a.row, a.col);
+    }
+    // dc == -1
+    return _hasVerticalFence(a.row, b.col);
+  }
 
-    final fromIndex = pathIndexFor(currentPlayer);
-    final path = pathFor(currentPlayer);
-    final destination = path[target];
+  bool _hasHorizontalFence(int fenceRow, int cellCol) {
+    if (fenceRow < 0 || fenceRow >= fenceSize) return false;
+    for (final w in walls) {
+      if (w.orientation != WallOrientation.horizontal) continue;
+      if (w.row != fenceRow) continue;
+      if (cellCol == w.col || cellCol == w.col + 1) return true;
+    }
+    return false;
+  }
 
-    var captured = false;
-    if (_cellHasOpponent(destination, currentPlayer)) {
-      if (currentPlayer == BlockRacePlayer.blue) {
-        redPathIndex = 0;
+  bool _hasVerticalFence(int cellRow, int fenceCol) {
+    if (fenceCol < 0 || fenceCol >= fenceSize) return false;
+    for (final w in walls) {
+      if (w.orientation != WallOrientation.vertical) continue;
+      if (w.col != fenceCol) continue;
+      if (cellRow == w.row || cellRow == w.row + 1) return true;
+    }
+    return false;
+  }
+
+  /// True if [candidate] overlaps or crosses any existing wall.
+  bool wallConflicts(Wall candidate) {
+    if (!candidate.inBounds) return true;
+    for (final w in walls) {
+      if (w == candidate) return true;
+      if (w.orientation == candidate.orientation) {
+        if (w.orientation == WallOrientation.horizontal) {
+          if (w.row == candidate.row && (w.col - candidate.col).abs() <= 1) {
+            return true;
+          }
+        } else {
+          if (w.col == candidate.col && (w.row - candidate.row).abs() <= 1) {
+            return true;
+          }
+        }
       } else {
-        bluePathIndex = 0;
+        // Crossing at the same intersection point.
+        if (w.orientation == WallOrientation.horizontal) {
+          if (candidate.row == w.row &&
+              candidate.col == w.col &&
+              candidate.orientation == WallOrientation.vertical) {
+            return true;
+          }
+        } else {
+          if (candidate.row == w.row &&
+              candidate.col == w.col &&
+              candidate.orientation == WallOrientation.horizontal) {
+            return true;
+          }
+        }
       }
-      captured = true;
+    }
+    return false;
+  }
+
+  bool wallLeavesPathsOpen(Wall candidate) {
+    walls.add(candidate);
+    final ok =
+        hasPathToGoal(BlockRacePlayer.blue) &&
+        hasPathToGoal(BlockRacePlayer.red);
+    walls.removeLast();
+    return ok;
+  }
+
+  bool canPlaceWall(Wall wall) {
+    if (phase != BlockRacePhase.choosing) return false;
+    if (wallsLeftFor(currentPlayer) <= 0) return false;
+    if (wallConflicts(wall)) return false;
+    return wallLeavesPathsOpen(wall);
+  }
+
+  /// Validity without requiring it to be the current player's turn to place
+  /// (used for ghost preview while choosing).
+  bool isWallPlacementLegal(Wall wall) {
+    if (wallsLeftFor(currentPlayer) <= 0) return false;
+    if (wallConflicts(wall)) return false;
+    return wallLeavesPathsOpen(wall);
+  }
+
+  List<Wall> allValidWalls() {
+    final result = <Wall>[];
+    for (var r = 0; r < fenceSize; r++) {
+      for (var c = 0; c < fenceSize; c++) {
+        for (final o in WallOrientation.values) {
+          final wall = Wall(row: r, col: c, orientation: o);
+          if (isWallPlacementLegal(wall)) result.add(wall);
+        }
+      }
+    }
+    return result;
+  }
+
+  bool hasPathToGoal(BlockRacePlayer player) {
+    final start = positionOf(player);
+    final goalRow = goalRowFor(player);
+    final visited = <BoardPos>{};
+    final queue = Queue<BoardPos>()..add(start);
+    visited.add(start);
+
+    while (queue.isNotEmpty) {
+      final cur = queue.removeFirst();
+      if (cur.row == goalRow) return true;
+      for (final n in _orthogonalNeighbors(cur)) {
+        if (visited.contains(n)) continue;
+        if (isEdgeBlocked(cur, n)) continue;
+        visited.add(n);
+        queue.add(n);
+      }
+    }
+    return false;
+  }
+
+  /// Shortest-path length to goal, or null if unreachable.
+  int? pathLengthToGoal(BlockRacePlayer player) {
+    final start = positionOf(player);
+    final goalRow = goalRowFor(player);
+    final visited = <BoardPos>{start};
+    final queue = Queue<(BoardPos, int)>()..add((start, 0));
+
+    while (queue.isNotEmpty) {
+      final (cur, dist) = queue.removeFirst();
+      if (cur.row == goalRow) return dist;
+      for (final n in _orthogonalNeighbors(cur)) {
+        if (visited.contains(n)) continue;
+        if (isEdgeBlocked(cur, n)) continue;
+        visited.add(n);
+        queue.add((n, dist + 1));
+      }
+    }
+    return null;
+  }
+
+  List<BoardPos> _orthogonalNeighbors(BoardPos p) {
+    const deltas = [
+      BoardPos(-1, 0),
+      BoardPos(1, 0),
+      BoardPos(0, -1),
+      BoardPos(0, 1),
+    ];
+    return [
+      for (final d in deltas)
+        if ((p + d).inBounds) p + d,
+    ];
+  }
+
+  BoardPos get _opponentPos =>
+      currentPlayer == BlockRacePlayer.blue ? redPos : bluePos;
+
+  /// Legal destination cells for the current player (Quoridor moves + jumps).
+  List<BoardPos> legalMoves() {
+    if (phase != BlockRacePhase.choosing && phase != BlockRacePhase.ready) {
+      return const [];
+    }
+    final from = positionOf(currentPlayer);
+    final opponent = _opponentPos;
+    final moves = <BoardPos>{};
+
+    for (final n in _orthogonalNeighbors(from)) {
+      if (isEdgeBlocked(from, n)) continue;
+      if (n == opponent) {
+        moves.addAll(_jumpDestinations(from, opponent));
+      } else {
+        moves.add(n);
+      }
+    }
+    return moves.toList();
+  }
+
+  List<BoardPos> _jumpDestinations(BoardPos from, BoardPos opponent) {
+    final dr = opponent.row - from.row;
+    final dc = opponent.col - from.col;
+    final beyond = BoardPos(opponent.row + dr, opponent.col + dc);
+
+    if (beyond.inBounds && !isEdgeBlocked(opponent, beyond)) {
+      return [beyond];
     }
 
-    if (currentPlayer == BlockRacePlayer.blue) {
-      bluePathIndex = target;
+    // Sideways jumps when straight jump is blocked or off-board.
+    final sides = <BoardPos>[];
+    if (dr != 0) {
+      // Vertical approach → lateral horizontal jumps
+      for (final sideCol in [opponent.col - 1, opponent.col + 1]) {
+        final side = BoardPos(opponent.row, sideCol);
+        if (!side.inBounds) continue;
+        if (isEdgeBlocked(opponent, side)) continue;
+        if (side == from) continue;
+        sides.add(side);
+      }
     } else {
-      redPathIndex = target;
+      for (final sideRow in [opponent.row - 1, opponent.row + 1]) {
+        final side = BoardPos(sideRow, opponent.col);
+        if (!side.inBounds) continue;
+        if (isEdgeBlocked(opponent, side)) continue;
+        if (side == from) continue;
+        sides.add(side);
+      }
     }
+    return sides;
+  }
 
-    final won = target == goalIndex;
-    if (won) {
+  bool canMoveTo(BoardPos to) => legalMoves().contains(to);
+
+  BlockRaceMoveResult? applyMove(BoardPos to) {
+    if (phase != BlockRacePhase.choosing) return null;
+    if (!canMoveTo(to)) return null;
+
+    final from = positionOf(currentPlayer);
+    if (currentPlayer == BlockRacePlayer.blue) {
+      bluePos = to;
+    } else {
+      redPos = to;
+    }
+    moveCount++;
+
+    if (hasReachedGoal(currentPlayer)) {
       winner = currentPlayer;
       phase = BlockRacePhase.gameOver;
-      return BlockRaceMoveResult(
-        fromIndex: fromIndex,
-        toIndex: target,
-        capturedOpponent: captured,
-        won: true,
-      );
+      return BlockRaceMoveResult(from: from, to: to, won: true);
     }
 
-    phase = canPlaceBarricade()
-        ? BlockRacePhase.placingBarricade
-        : BlockRacePhase.animating;
-
-    return BlockRaceMoveResult(
-      fromIndex: fromIndex,
-      toIndex: target,
-      capturedOpponent: captured,
-      won: false,
-    );
+    phase = BlockRacePhase.animating;
+    return BlockRaceMoveResult(from: from, to: to, won: false);
   }
 
-  bool placeBarricade(BlockRaceCell cell) {
-    if (phase != BlockRacePhase.placingBarricade) return false;
-    if (!validBarricadeCells().contains(cell)) return false;
+  bool placeWall(Wall wall) {
+    if (phase != BlockRacePhase.choosing) return false;
+    if (!canPlaceWall(wall)) return false;
 
-    barricades.add(cell);
+    walls.add(wall);
     if (currentPlayer == BlockRacePlayer.blue) {
-      blueBarricadesLeft--;
+      blueWallsLeft--;
     } else {
-      redBarricadesLeft--;
+      redWallsLeft--;
     }
+    moveCount++;
     phase = BlockRacePhase.animating;
     return true;
   }
 
-  void skipBarricade() {
-    if (phase != BlockRacePhase.placingBarricade) return;
-    phase = BlockRacePhase.animating;
-  }
-
   void finishAnimations() {
     if (phase != BlockRacePhase.animating) return;
-    _advancePlayer();
-  }
-
-  void _endTurnWithoutBarricade() {
-    phase = BlockRacePhase.animating;
-  }
-
-  void _advancePlayer() {
     if (winner != null) {
       phase = BlockRacePhase.gameOver;
       return;
     }
-
     currentPlayer = currentPlayer == BlockRacePlayer.blue
         ? BlockRacePlayer.red
         : BlockRacePlayer.blue;
-    phase = BlockRacePhase.rolling;
-  }
-
-  void handleRollComplete() {
-    if (phase != BlockRacePhase.rolling) return;
-    phase = BlockRacePhase.moving;
+    actionMode = BlockRaceActionMode.move;
+    phase = BlockRacePhase.choosing;
   }
 }

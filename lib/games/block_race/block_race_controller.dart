@@ -5,225 +5,182 @@ import 'package:flutter/foundation.dart';
 import 'block_race_ai.dart';
 import 'block_race_config.dart';
 import 'block_race_logic.dart';
-import 'block_race_stage.dart';
+import 'block_race_sounds.dart';
 import 'block_race_theme.dart';
-import 'block_race_tween.dart';
 
+/// Orchestrates game logic, input, and AI for Barricade Clash.
+///
+/// The board renders directly from [game] state with implicit animations,
+/// so the controller only needs to pace turns with short delays that match
+/// the board's animation durations. Every state change notifies listeners,
+/// which makes a stale-busy deadlock impossible.
 class BlockRaceGameController extends ChangeNotifier {
-  BlockRaceGameController({required this.config}) {
+  BlockRaceGameController({
+    required this.config,
+    bool autoStart = true,
+    this.sounds,
+  }) {
     _ai = BlockRaceAi(difficulty: config.difficulty);
-    _stage = BlockRaceStage(
-      onReady: _handleStageReady,
-      onTick: _handleTick,
-    );
-    _stage.init();
+    if (autoStart) startGame();
   }
 
   final BlockRaceConfig config;
-  late final BlockRaceAi _ai;
-  late final BlockRaceStage _stage;
-  final BlockRaceGame _game = BlockRaceGame();
-  final BlockRaceTweenRunner _tweens = BlockRaceTweenRunner();
 
-  bool _stageReady = false;
-  bool _isBusy = false;
-  int _displayDice = 1;
-  bool _diceRolling = false;
+  /// Optional SFX; owned by the screen, not disposed here.
+  final BlockRaceSounds? sounds;
+  late final BlockRaceAi _ai;
+  final BlockRaceGame _game = BlockRaceGame();
+
+  /// Who placed each wall, for coloring.
+  final Map<Wall, BlockRacePlayer> wallOwners = {};
+
+  bool _busy = false;
+  bool _disposed = false;
 
   BlockRaceGame get game => _game;
-  BlockRaceStage get stage => _stage;
-  bool get stageReady => _stageReady;
-  int get displayDice => _displayDice;
-  bool get diceRolling => _diceRolling;
-  bool get isBusy => _isBusy || _tweens.isAnimating;
+  bool get isBusy => _busy;
 
+  /// Human plays Red (bottom). Blue is AI in vs-computer mode.
   bool get isHumanTurn {
     if (config.mode == BlockRacePlayMode.localTwoPlayer) return true;
-    return _game.currentPlayer == BlockRacePlayer.blue;
-  }
-
-  void _handleStageReady() {
-    _stageReady = true;
-    _game.phase = BlockRacePhase.ready;
-    notifyListeners();
-  }
-
-  void _handleTick(double dt) {
-    _tweens.update(dt);
+    return _game.currentPlayer == BlockRacePlayer.red;
   }
 
   void startGame() {
-    if (!_stageReady || _isBusy) return;
+    if (_busy) return;
     _game.startGame();
-    notifyListeners();
+    wallOwners.clear();
+    _notify();
+    _maybeRunAiTurn();
   }
 
-  Future<void> rollDice() async {
-    if (!_stageReady || _isBusy) return;
-    if (_game.phase != BlockRacePhase.rolling) return;
-    if (!isHumanTurn && config.mode == BlockRacePlayMode.vsComputer) return;
-
-    _isBusy = true;
-    _diceRolling = true;
-    notifyListeners();
-
-    for (var i = 0; i < 8; i++) {
-      _displayDice = _game.rollDice();
-      notifyListeners();
-      await Future<void>.delayed(const Duration(milliseconds: 70));
-    }
-    _displayDice = _game.rollDice();
-    _game.diceValue = _displayDice;
-    _diceRolling = false;
-    _game.handleRollComplete();
-    notifyListeners();
-
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    await _resolveMove();
+  void toggleWallOrientation() {
+    if (!isHumanTurn || _busy) return;
+    _game.toggleWallOrientation();
+    _notify();
   }
 
-  Future<void> _resolveMove() async {
-    final player = _game.currentPlayer;
-    final result = _game.applyMove();
+  void setWallOrientation(WallOrientation orientation) {
+    if (!isHumanTurn || _busy) return;
+    _game.setWallOrientation(orientation);
+    _notify();
+  }
 
-    if (result == null) {
-      _stage.syncPawnPositions(
-        _game.pawnCell(BlockRacePlayer.blue),
-        _game.pawnCell(BlockRacePlayer.red),
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-      _game.finishAnimations();
-      _isBusy = false;
-      notifyListeners();
-      await _maybeRunAiTurn();
+  Future<void> onCellTap(BoardPos cell) async {
+    if (_busy || _game.phase != BlockRacePhase.choosing || !isHumanTurn) {
       return;
     }
+    await applyMove(cell);
+  }
 
-    final path = BlockRaceGame.pathFor(player);
-    final steps = path.sublist(result.fromIndex, result.toIndex + 1);
-
-    final moveDone = Completer<void>();
-    _stage.animatePawnMove(
-      player: player,
-      steps: steps,
-      tweens: _tweens,
-      onComplete: moveDone.complete,
-    );
-    await moveDone.future;
-
-    if (result.capturedOpponent) {
-      final opponent = player == BlockRacePlayer.blue
-          ? BlockRacePlayer.red
-          : BlockRacePlayer.blue;
-      final captureSteps = [
-        path[result.toIndex],
-        BlockRaceGame.pathFor(opponent).first,
-      ];
-      final captureDone = Completer<void>();
-      _stage.animatePawnMove(
-        player: opponent,
-        steps: captureSteps,
-        tweens: _tweens,
-        onComplete: captureDone.complete,
-      );
-      await captureDone.future;
+  Future<void> onWallTap(Wall wall) async {
+    if (_busy || _game.phase != BlockRacePhase.choosing || !isHumanTurn) {
+      return;
     }
+    await placeWall(wall);
+  }
 
+  /// Keyboard / D-pad movement relative to the current pawn.
+  Future<void> moveByDelta(int dRow, int dCol) async {
+    if (_busy || _game.phase != BlockRacePhase.choosing || !isHumanTurn) {
+      return;
+    }
+    final from = _game.positionOf(_game.currentPlayer);
+    final to = BoardPos(from.row + dRow, from.col + dCol);
+    if (_game.legalMoves().contains(to)) {
+      await applyMove(to);
+    }
+  }
+
+  Future<void> applyMove(BoardPos to) async {
+    if (_busy || _game.phase != BlockRacePhase.choosing) return;
+    final result = _game.applyMove(to);
+    if (result == null) return;
+    unawaited(result.won ? sounds?.win() : sounds?.move());
+
+    _busy = true;
+    _notify();
+    await _wait(BlockRaceTheme.moveDuration + const Duration(milliseconds: 20));
+
+    _busy = false;
     if (result.won) {
-      _isBusy = false;
-      notifyListeners();
+      _notify();
       return;
     }
-
-    if (_game.phase == BlockRacePhase.placingBarricade) {
-      _isBusy = false;
-      notifyListeners();
-      if (!isHumanTurn) {
-        await Future<void>.delayed(const Duration(milliseconds: 500));
-        await _aiPlaceBarricade();
-      }
-      return;
-    }
-
-    await _finishTurn();
-  }
-
-  Future<void> placeBarricade(BlockRaceCell cell) async {
-    if (_isBusy || _game.phase != BlockRacePhase.placingBarricade) return;
-    if (!isHumanTurn) return;
-    if (!_game.placeBarricade(cell)) return;
-
-    _isBusy = true;
-    notifyListeners();
-    _stage.addBarricade(cell, _tweens);
-    _stage.pulseTile(cell, _tweens);
-    await Future<void>.delayed(
-      Duration(
-        milliseconds:
-            (BlockRaceTheme.barricadeAnimationDuration * 1000).round() + 100,
-      ),
-    );
-    await _finishTurn();
-  }
-
-  Future<void> skipBarricade() async {
-    if (_isBusy || _game.phase != BlockRacePhase.placingBarricade) return;
-    if (!isHumanTurn) return;
-    _game.skipBarricade();
-    _isBusy = true;
-    notifyListeners();
-    await _finishTurn();
-  }
-
-  Future<void> _aiPlaceBarricade() async {
-    if (_game.phase != BlockRacePhase.placingBarricade) return;
-    final cell = _ai.chooseBarricade(_game);
-    if (cell != null) {
-      _game.placeBarricade(cell);
-      _stage.addBarricade(cell, _tweens);
-      _stage.pulseTile(cell, _tweens);
-      await Future<void>.delayed(
-        Duration(
-          milliseconds:
-              (BlockRaceTheme.barricadeAnimationDuration * 1000).round() + 100,
-        ),
-      );
-    } else {
-      _game.skipBarricade();
-    }
-    await _finishTurn();
-  }
-
-  Future<void> _finishTurn() async {
     _game.finishAnimations();
-    _isBusy = false;
-    notifyListeners();
+    _notify();
+    await _maybeRunAiTurn();
+  }
+
+  Future<void> placeWall(Wall wall) async {
+    if (_busy || _game.phase != BlockRacePhase.choosing) return;
+    final placer = _game.currentPlayer;
+    if (!_game.placeWall(wall)) return;
+    wallOwners[wall] = placer;
+    unawaited(sounds?.wall());
+
+    _busy = true;
+    _notify();
+    await _wait(BlockRaceTheme.wallDuration + const Duration(milliseconds: 20));
+
+    _busy = false;
+    _game.finishAnimations();
+    _notify();
     await _maybeRunAiTurn();
   }
 
   Future<void> _maybeRunAiTurn() async {
-    if (_game.phase == BlockRacePhase.gameOver) return;
-    if (_game.phase != BlockRacePhase.rolling) return;
-    if (isHumanTurn) return;
+    if (_disposed) return;
+    if (_game.phase != BlockRacePhase.choosing || isHumanTurn) return;
 
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    await rollDice();
+    await _wait(BlockRaceTheme.aiThinkDuration);
+    if (_game.phase != BlockRacePhase.choosing || isHumanTurn || _busy) {
+      return;
+    }
+
+    final choice = _ai.choose(_game);
+    if (choice.isMove && choice.move != null) {
+      await applyMove(choice.move!);
+    } else if (choice.isWall && choice.wall != null) {
+      await placeWall(choice.wall!);
+    }
+
+    // Safety net: never leave the game frozen on the computer's turn.
+    if (_game.phase == BlockRacePhase.choosing && !isHumanTurn && !_busy) {
+      final moves = _game.legalMoves();
+      if (moves.isNotEmpty) {
+        await applyMove(moves.first);
+      }
+    }
+    if (_game.phase == BlockRacePhase.choosing && !isHumanTurn && !_busy) {
+      _game.phase = BlockRacePhase.animating;
+      _game.finishAnimations();
+      _notify();
+    }
   }
 
+  /// Drives the tutorial/demo: plays one move for the current human player.
   Future<void> runDemoMove() async {
-    if (!_stageReady || _game.phase == BlockRacePhase.gameOver) return;
-    if (_game.phase == BlockRacePhase.ready) {
-      startGame();
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (_game.phase == BlockRacePhase.gameOver) return;
+    if (_game.phase == BlockRacePhase.choosing && isHumanTurn && !_busy) {
+      final moves = _game.legalMoves();
+      if (moves.isNotEmpty) {
+        await applyMove(moves.first);
+      }
     }
-    if (_game.phase == BlockRacePhase.rolling && isHumanTurn) {
-      await rollDice();
-    }
+  }
+
+  Future<void> _wait(Duration duration) async {
+    await Future<void>.delayed(duration);
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
   }
 
   @override
   void dispose() {
-    _stage.dispose();
+    _disposed = true;
     super.dispose();
   }
 }

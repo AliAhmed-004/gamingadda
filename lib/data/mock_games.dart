@@ -2,11 +2,23 @@ import '../models/game.dart';
 
 const mockGames = <Game>[
   Game(
-    id: 'block_race',
-    title: 'Block Race',
+    id: 'blokus',
+    title: 'Blokus',
     category: 'Strategy',
     description:
-        'A 3D barricade race — roll the dice, hop your pawn along the path, and drop walls to block your rival. First to the goal wins.',
+        'Place colorful polyominoes on a 20×20 board. Touch your own pieces by corners only, block rivals, and score the most squares. 2–4 players, hotseat or vs AI — raised 3D tiles.',
+    thumbnailUrl: 'assets/icons/blokus.png',
+    coverUrl: 'assets/icons/blokus.png',
+    rating: 4.8,
+    playUrl: '',
+    featured: true,
+  ),
+  Game(
+    id: 'block_race',
+    title: 'Barricade Clash',
+    category: 'Strategy',
+    description:
+        'Quoridor-style 3D duel on a neon 9×9 grid. Move your piece or drop glowing walls — first to the opposite side wins. Play vs AI or a friend.',
     thumbnailUrl: 'assets/icons/block_race.png',
     coverUrl: 'assets/icons/block_race.png',
     rating: 4.7,
@@ -58,6 +70,18 @@ const mockGames = <Game>[
     thumbnailUrl: 'assets/icons/ludo.png',
     coverUrl: 'assets/icons/ludo.png',
     rating: 4.8,
+    playUrl: '',
+    featured: true,
+  ),
+  Game(
+    id: 'memory_match',
+    title: 'Memory Match',
+    category: 'Puzzle',
+    description:
+        'Flip face-down cards and match pairs from memory. Climb 365 stages — boards grow, peeks shrink, and move limits get tighter.',
+    thumbnailUrl: 'assets/icons/memory_match.png',
+    coverUrl: 'assets/icons/memory_match.png',
+    rating: 4.7,
     playUrl: '',
     featured: true,
   ),
