@@ -96,7 +96,10 @@ flutter:
     - assets/checkers/goti/goti_light.png
     - assets/checkers/goti/goti_light_king.png
     - assets/checkers/goti/goti_target.png
+    - assets/block_race/
     - assets/tic_tac_toe/
+    - assets/memory_match/
+    - assets/memory_match/faces/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
