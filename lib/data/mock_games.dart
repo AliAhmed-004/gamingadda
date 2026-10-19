@@ -78,7 +78,7 @@ const mockGames = <Game>[
     title: 'Memory Match',
     category: 'Puzzle',
     description:
-        'Flip face-down cards and match pairs from memory. Climb 365 stages — boards grow, peeks shrink, and move limits get tighter.',
+        'Flip 3D face-down cards and match pairs from memory. Easy starts on a 9-pair grid; climb 365 stages as boards grow and limits tighten.',
     thumbnailUrl: 'assets/icons/memory_match.png',
     coverUrl: 'assets/icons/memory_match.png',
     rating: 4.7,

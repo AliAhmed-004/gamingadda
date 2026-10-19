@@ -6,20 +6,20 @@ import 'memory_match_config.dart';
 
 /// Difficulty curve for the 365-level campaign.
 ///
-/// Pair count grows from 2 → 18. Early levels get a short face-up peek;
-/// later levels flip mismatches back faster and tighten the move budget.
+/// Starts at a full easy grid (9 pairs) and climbs to 18 pairs. Later levels
+/// peek less, flip mismatches back faster, and tighten the move budget.
 abstract final class MemoryMatchLevels {
   static const int maxLevel = 365;
   static const int maxPairs = 18;
 
-  /// Pair counts that tile cleanly into a 2–6 column grid.
-  static const _pairSteps = [2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 18];
+  /// Pair counts that tile cleanly; campaign begins at the Easy 9-pair grid.
+  static const _pairSteps = [9, 10, 12, 15, 18];
 
   /// Number of unique pairs for [level] (1-based).
   static int pairsFor(int level) {
     final t = ((level - 1) / (maxLevel - 1)).clamp(0.0, 1.0);
-    // Ease-in so the board stays small longer, then ramps up.
-    final eased = pow(t, 0.85).toDouble();
+    // Ease-out so mid/late campaign ramps into bigger boards sooner.
+    final eased = pow(t, 0.65).toDouble();
     final idx = (eased * (_pairSteps.length - 1)).round();
     return _pairSteps[idx];
   }
@@ -32,7 +32,6 @@ abstract final class MemoryMatchLevels {
     for (var cols = 2; cols <= 6; cols++) {
       if (cards % cols != 0) continue;
       final rows = cards ~/ cols;
-      // Prefer near-square boards that are not too tall.
       final score = (rows - cols).abs() + rows * 0.15;
       if (score < bestScore) {
         bestScore = score;
@@ -45,25 +44,25 @@ abstract final class MemoryMatchLevels {
   /// How long mismatched cards stay face-up before flipping back.
   static Duration mismatchDelayFor(int level) {
     final t = ((level - 1) / (maxLevel - 1)).clamp(0.0, 1.0);
-    final ms = 1100 - (t * 650).round(); // 1100 → 450
+    // 1000ms → 320ms — much snappier late game.
+    final ms = 1000 - (t * 680).round();
     return Duration(milliseconds: ms);
   }
 
-  /// Optional brief reveal at the start of easy campaign levels.
+  /// Brief reveal only on early campaign levels; fades out by level 25.
   static Duration? peekDurationFor(int level) {
-    if (level > 40) return null;
-    final ms = 1600 - ((level - 1) * 28);
-    return Duration(milliseconds: ms.clamp(400, 1600));
+    if (level > 25) return null;
+    final ms = 1200 - ((level - 1) * 40);
+    return Duration(milliseconds: ms.clamp(300, 1200));
   }
 
-  /// Soft move budget. Null means unlimited (free play).
-  /// Campaign always has a budget that shrinks relative to pairs.
+  /// Move budget shrinks hard as levels climb.
   static int moveLimitFor(int level) {
     final pairs = pairsFor(level);
     final t = ((level - 1) / (maxLevel - 1)).clamp(0.0, 1.0);
-    // Early: ~4 attempts per pair; late: ~2.4 attempts per pair.
-    final attemptsPerPair = 4.0 - t * 1.6;
-    return max(pairs + 2, (pairs * attemptsPerPair).ceil());
+    // Early: ~3.6 attempts/pair; late: ~2.05 attempts/pair.
+    final attemptsPerPair = 3.6 - t * 1.55;
+    return max(pairs + 1, (pairs * attemptsPerPair).ceil());
   }
 
   static MemoryMatchLevelSpec specForLevel(int level) {
@@ -80,21 +79,23 @@ abstract final class MemoryMatchLevels {
 
   static MemoryMatchLevelSpec specForDifficulty(MemoryMatchDifficulty d) {
     final pairs = switch (d) {
-      MemoryMatchDifficulty.easy => 4,
-      MemoryMatchDifficulty.medium => 8,
-      MemoryMatchDifficulty.hard => 12,
+      MemoryMatchDifficulty.easy => 9,
+      MemoryMatchDifficulty.medium => 12,
+      MemoryMatchDifficulty.hard => 18,
     };
     return MemoryMatchLevelSpec(
       pairs: pairs,
       columns: columnsFor(pairs),
       mismatchDelay: switch (d) {
-        MemoryMatchDifficulty.easy => const Duration(milliseconds: 1000),
-        MemoryMatchDifficulty.medium => const Duration(milliseconds: 750),
-        MemoryMatchDifficulty.hard => const Duration(milliseconds: 550),
+        MemoryMatchDifficulty.easy => const Duration(milliseconds: 900),
+        MemoryMatchDifficulty.medium => const Duration(milliseconds: 650),
+        MemoryMatchDifficulty.hard => const Duration(milliseconds: 400),
       },
-      peekDuration: d == MemoryMatchDifficulty.easy
-          ? const Duration(milliseconds: 900)
-          : null,
+      peekDuration: switch (d) {
+        MemoryMatchDifficulty.easy => const Duration(milliseconds: 1000),
+        MemoryMatchDifficulty.medium => const Duration(milliseconds: 500),
+        MemoryMatchDifficulty.hard => null,
+      },
       moveLimit: null,
       seed: DateTime.now().millisecondsSinceEpoch,
     );

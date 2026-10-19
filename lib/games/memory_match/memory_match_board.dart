@@ -28,15 +28,15 @@ class MemoryMatchBoard extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final rows = (game.cards.length / columns).ceil();
-        final gap = 8.0;
-        final pad = 10.0;
+        final gap = 10.0;
+        final pad = 12.0;
         final maxW = constraints.maxWidth;
         final maxH = constraints.maxHeight;
         final cellW = (maxW - pad * 2 - gap * (columns - 1)) / columns;
-        final cellHFromW = cellW / 0.78;
+        final cellHFromW = cellW / 0.72;
         final cellHCap = (maxH - pad * 2 - gap * (rows - 1)) / rows;
         final cellH = cellHFromW < cellHCap ? cellHFromW : cellHCap;
-        final cellWFinal = cellH * 0.78;
+        final cellWFinal = cellH * 0.72;
         final boardW = pad * 2 + cellWFinal * columns + gap * (columns - 1);
         final boardH = pad * 2 + cellH * rows + gap * (rows - 1);
 
@@ -46,17 +46,24 @@ class MemoryMatchBoard extends StatelessWidget {
             height: boardH,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: MemoryMatchTheme.boardBg.withValues(alpha: 0.55),
-                borderRadius: BorderRadius.circular(22),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    MemoryMatchTheme.boardBg.withValues(alpha: 0.75),
+                    const Color(0xFF0A1628).withValues(alpha: 0.9),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.12),
+                  color: Colors.white.withValues(alpha: 0.14),
                   width: 2,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.35),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
+                    color: Colors.black.withValues(alpha: 0.45),
+                    blurRadius: 24,
+                    offset: const Offset(0, 12),
                   ),
                 ],
               ),
@@ -69,7 +76,7 @@ class MemoryMatchBoard extends StatelessWidget {
                     crossAxisCount: columns,
                     mainAxisSpacing: gap,
                     crossAxisSpacing: gap,
-                    childAspectRatio: 0.78,
+                    childAspectRatio: 0.72,
                   ),
                   itemBuilder: (context, index) {
                     final card = game.cards[index];
@@ -107,7 +114,7 @@ class _FlipCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final faceUp = card.isFaceUp;
-    final face = MemoryMatchTheme.faces[card.pairId % MemoryMatchTheme.faces.length];
+    final face = MemoryMatchTheme.faceFor(card.pairId);
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     return Semantics(
@@ -118,7 +125,7 @@ class _FlipCard extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: AnimatedScale(
-          scale: highlighted ? 1.06 : 1.0,
+          scale: highlighted ? 1.07 : 1.0,
           duration: MemoryMatchTheme.matchPulseDuration,
           curve: Curves.easeOutBack,
           child: TweenAnimationBuilder<double>(
@@ -126,26 +133,34 @@ class _FlipCard extends StatelessWidget {
             duration: reduceMotion
                 ? Duration.zero
                 : MemoryMatchTheme.flipDuration,
-            curve: Curves.easeInOut,
+            curve: Curves.easeInOutCubic,
             builder: (context, t, _) {
               final angle = t * math.pi;
               final showFace = t >= 0.5;
+              final lift = math.sin(t * math.pi) * 8;
               return Transform(
                 alignment: Alignment.center,
                 transform: Matrix4.identity()
-                  ..setEntry(3, 2, 0.0012)
+                  ..setEntry(3, 2, 0.0015)
+                  ..translateByDouble(0, -lift, lift * 0.4, 1)
                   ..rotateY(angle),
                 child: showFace
                     ? Transform(
                         alignment: Alignment.center,
                         transform: Matrix4.identity()..rotateY(math.pi),
-                        child: _Face(
-                          face: face,
+                        child: _CardImage(
+                          asset: face.asset,
+                          accent: face.color,
                           matched: card.isMatched,
                           highlighted: highlighted,
                         ),
                       )
-                    : const _Back(),
+                    : _CardImage(
+                        asset: MemoryMatchTheme.cardBackAsset,
+                        accent: MemoryMatchTheme.back,
+                        matched: false,
+                        highlighted: highlighted,
+                      ),
               );
             },
           ),
@@ -155,93 +170,83 @@ class _FlipCard extends StatelessWidget {
   }
 }
 
-class _Back extends StatelessWidget {
-  const _Back();
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF3B82F6), MemoryMatchTheme.back, MemoryMatchTheme.backEdge],
-        ),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.28),
-            blurRadius: 6,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Center(
-        child: Container(
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withValues(alpha: 0.55), width: 2),
-          ),
-          child: Icon(
-            Icons.question_mark_rounded,
-            size: 16,
-            color: Colors.white.withValues(alpha: 0.85),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Face extends StatelessWidget {
-  const _Face({
-    required this.face,
+class _CardImage extends StatelessWidget {
+  const _CardImage({
+    required this.asset,
+    required this.accent,
     required this.matched,
     required this.highlighted,
   });
 
-  final MemoryMatchFace face;
+  final String asset;
+  final Color accent;
   final bool matched;
   final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
-    final border = matched || highlighted
-        ? MemoryMatchTheme.match
-        : face.color;
+    final rim = matched || highlighted ? MemoryMatchTheme.match : accent;
 
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        color: MemoryMatchTheme.face,
-        border: Border.all(color: border, width: matched ? 3 : 2.5),
         boxShadow: [
-          if (highlighted || matched)
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+          if (matched || highlighted)
             BoxShadow(
               color: MemoryMatchTheme.match.withValues(alpha: 0.45),
-              blurRadius: 12,
+              blurRadius: 14,
               spreadRadius: 1,
-            )
-          else
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.22),
-              blurRadius: 6,
-              offset: const Offset(0, 3),
             ),
         ],
       ),
-      child: Center(
-        child: Icon(
-          face.icon,
-          size: 34,
-          color: face.color,
-          shadows: [
-            Shadow(
-              color: face.color.withValues(alpha: 0.35),
-              blurRadius: 8,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.asset(
+              asset,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (context, error, stackTrace) => ColoredBox(
+                color: MemoryMatchTheme.face,
+                child: Icon(Icons.broken_image_outlined, color: accent),
+              ),
+            ),
+            // Soft gloss.
+            IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: const Alignment(-0.9, -1),
+                    end: const Alignment(0.5, 0.4),
+                    colors: [
+                      Colors.white.withValues(alpha: 0.28),
+                      Colors.white.withValues(alpha: 0.05),
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.14),
+                    ],
+                    stops: const [0.0, 0.22, 0.55, 1.0],
+                  ),
+                ),
+              ),
+            ),
+            // Accent rim.
+            IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: rim.withValues(alpha: matched ? 0.95 : 0.55),
+                    width: matched || highlighted ? 3 : 2,
+                  ),
+                ),
+              ),
             ),
           ],
         ),

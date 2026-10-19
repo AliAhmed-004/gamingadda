@@ -61,8 +61,8 @@ class _MemoryMatchSetupScreenState extends State<MemoryMatchSetupScreen> {
           content: Text(
             'All cards start face down. Tap one, then another — if the '
             'symbols match they stay up; if not they flip back. Clear every '
-            'pair to finish the stage. Campaign has 365 levels that grow '
-            'from tiny boards to full grids with tighter move limits.',
+            'pair to finish the stage. Easy starts on a 9-pair grid. Campaign '
+            'has 365 levels that grow harder with more cards and tighter moves.',
             style: GoogleFonts.nunito(height: 1.4),
           ),
           actions: [
@@ -78,8 +78,8 @@ class _MemoryMatchSetupScreenState extends State<MemoryMatchSetupScreen> {
   }
 
   String get _modeHint => _mode == MemoryMatchPlayMode.campaign
-      ? '365 stages: more cards, shorter peeks, tighter move budgets.'
-      : 'Easy = 4 pairs, Medium = 8 pairs, Hard = 12 pairs.';
+      ? '365 stages: starts at 9 pairs, then bigger boards and tighter limits.'
+      : 'Easy = 9 pairs, Medium = 12 pairs, Hard = 18 pairs.';
 
   @override
   Widget build(BuildContext context) {

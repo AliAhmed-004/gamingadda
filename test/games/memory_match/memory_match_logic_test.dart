@@ -7,10 +7,14 @@ void main() {
   group('MemoryMatchLevels', () {
     test('has 365 levels with growing pairs', () {
       expect(MemoryMatchLevels.maxLevel, 365);
-      expect(MemoryMatchLevels.pairsFor(1), 2);
+      expect(MemoryMatchLevels.pairsFor(1), 9);
       expect(MemoryMatchLevels.pairsFor(365), MemoryMatchLevels.maxPairs);
       expect(
         MemoryMatchLevels.pairsFor(100),
+        lessThanOrEqualTo(MemoryMatchLevels.pairsFor(300)),
+      );
+      expect(
+        MemoryMatchLevels.pairsFor(50),
         lessThan(MemoryMatchLevels.pairsFor(300)),
       );
     });
@@ -27,28 +31,29 @@ void main() {
     test('campaign specs include move limits and seeds', () {
       final easy = MemoryMatchLevels.specForLevel(1);
       final hard = MemoryMatchLevels.specForLevel(365);
-      expect(easy.pairs, 2);
+      expect(easy.pairs, 9);
       expect(easy.peekDuration, isNotNull);
       expect(easy.moveLimit, isNotNull);
       expect(hard.pairs, MemoryMatchLevels.maxPairs);
       expect(hard.peekDuration, isNull);
       expect(hard.mismatchDelay.inMilliseconds,
           lessThan(easy.mismatchDelay.inMilliseconds));
+      expect(hard.moveLimit!, lessThan(easy.moveLimit! * 2));
     });
 
     test('free-play difficulties map to fixed pair counts', () {
       expect(
         MemoryMatchLevels.specForDifficulty(MemoryMatchDifficulty.easy).pairs,
-        4,
+        9,
       );
       expect(
         MemoryMatchLevels.specForDifficulty(MemoryMatchDifficulty.medium)
             .pairs,
-        8,
+        12,
       );
       expect(
         MemoryMatchLevels.specForDifficulty(MemoryMatchDifficulty.hard).pairs,
-        12,
+        18,
       );
     });
 
